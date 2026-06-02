@@ -6,43 +6,48 @@ const cors = require("cors");
 const app = express();
 
 // =========================
-// MIDDLEWARE (IMPORTANT)
+// MIDDLEWARE
 // =========================
 app.use(cors());
 app.use(express.json());
 
 // =========================
-// CONFIG (CHANGE THIS)
+// EMAIL CONFIG
 // =========================
 const EMAIL_USER = "cashnest.verifycom@gmail.com";
 const EMAIL_PASS = "iybo cecw pyvl amqw";
 
 // =========================
-// STORAGE (temporary memory)
+// STORAGE
 // =========================
 const otpStore = new Map();
-const cooldownStore = new Map(); // anti-spam resend
+const cooldownStore = new Map();
 
 // =========================
-// HELPERS
+// OTP GENERATOR
 // =========================
 function generateOTP() {
   return crypto.randomInt(100000, 999999).toString();
 }
 
-nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false,
-  auth: {
-    user: EMAIL_USER,
-    pass: EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false
-  }
-});
-    
+// =========================
+// TRANSPORTER (FIXED)
+// =========================
+function createTransporter() {
+  return nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
+    auth: {
+      user: EMAIL_USER,
+      pass: EMAIL_PASS,
+    },
+    tls: {
+      rejectUnauthorized: false
+    },
+    connectionTimeout: 10000, // 🔥 prevents hanging forever
+    socketTimeout: 10000
+  });
 }
 
 // =========================
@@ -53,20 +58,23 @@ app.post("/send-otp", async (req, res) => {
     const { email } = req.body;
 
     if (!email) {
-      return res.status(400).json({ success: false, message: "Email required" });
+      return res.status(400).json({
+        success: false,
+        message: "Email is required"
+      });
     }
 
-    // cooldown check (30 sec anti spam)
-    const lastSent = cooldownStore.get(email);
-    if (lastSent && Date.now() - lastSent < 30000) {
+    // anti-spam (30 sec)
+    const last = cooldownStore.get(email);
+    if (last && Date.now() - last < 30000) {
       return res.status(429).json({
         success: false,
-        message: "Please wait 30 seconds before requesting OTP again",
+        message: "Wait 30 seconds before requesting again"
       });
     }
 
     const otp = generateOTP();
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 min
+    const expiresAt = Date.now() + 5 * 60 * 1000;
 
     otpStore.set(email, { otp, expiresAt });
     cooldownStore.set(email, Date.now());
@@ -78,17 +86,17 @@ app.post("/send-otp", async (req, res) => {
       to: email,
       subject: "Your OTP Code",
       html: `
-        <div style="font-family:Arial">
-          <h2>Your Verification Code</h2>
+        <div style="font-family: Arial;">
+          <h2>Your OTP Code</h2>
           <h1>${otp}</h1>
           <p>Valid for 5 minutes</p>
         </div>
-      `,
+      `
     });
 
     return res.json({
       success: true,
-      message: "OTP sent successfully",
+      message: "OTP sent successfully"
     });
 
   } catch (err) {
@@ -97,6 +105,7 @@ app.post("/send-otp", async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to send OTP",
+      error: err.message
     });
   }
 });
@@ -108,16 +117,15 @@ app.post("/resend-otp", async (req, res) => {
   try {
     const { email } = req.body;
 
-    const existing = otpStore.get(email);
+    const record = otpStore.get(email);
 
-    if (!existing) {
+    if (!record) {
       return res.status(400).json({
         success: false,
-        message: "No previous OTP found. Please request a new one.",
+        message: "No OTP found. Request new one."
       });
     }
 
-    // reuse same OTP (safer + prevents spam emails)
     const transporter = createTransporter();
 
     await transporter.sendMail({
@@ -125,17 +133,17 @@ app.post("/resend-otp", async (req, res) => {
       to: email,
       subject: "Your OTP Code (Resent)",
       html: `
-        <div style="font-family:Arial">
+        <div style="font-family: Arial;">
           <h2>Your OTP (Resent)</h2>
-          <h1>${existing.otp}</h1>
-          <p>Valid until expiry</p>
+          <h1>${record.otp}</h1>
+          <p>Still valid</p>
         </div>
-      `,
+      `
     });
 
     return res.json({
       success: true,
-      message: "OTP resent successfully",
+      message: "OTP resent successfully"
     });
 
   } catch (err) {
@@ -143,7 +151,7 @@ app.post("/resend-otp", async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to resend OTP",
+      message: "Failed to resend OTP"
     });
   }
 });
@@ -159,7 +167,7 @@ app.post("/verify-otp", (req, res) => {
   if (!record) {
     return res.status(400).json({
       success: false,
-      message: "No OTP found",
+      message: "No OTP found"
     });
   }
 
@@ -167,14 +175,14 @@ app.post("/verify-otp", (req, res) => {
     otpStore.delete(email);
     return res.status(400).json({
       success: false,
-      message: "OTP expired",
+      message: "OTP expired"
     });
   }
 
   if (record.otp !== otp) {
     return res.status(400).json({
       success: false,
-      message: "Invalid OTP",
+      message: "Invalid OTP"
     });
   }
 
@@ -183,12 +191,12 @@ app.post("/verify-otp", (req, res) => {
 
   return res.json({
     success: true,
-    message: "OTP verified successfully",
+    message: "OTP verified successfully"
   });
 });
 
 // =========================
-// CLEANUP OLD OTPs
+// CLEANUP
 // =========================
 setInterval(() => {
   const now = Date.now();
@@ -198,7 +206,7 @@ setInterval(() => {
       otpStore.delete(email);
     }
   }
-}, 60 * 1000);
+}, 60000);
 
 // =========================
 // START SERVER
