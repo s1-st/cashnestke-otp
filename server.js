@@ -1,21 +1,19 @@
 const express = require("express");
-const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const cors = require("cors");
+const { Resend } = require("resend");
 
 const app = express();
 
-// =========================
-// MIDDLEWARE
-// =========================
 app.use(cors());
 app.use(express.json());
 
 // =========================
-// EMAIL CONFIG
+// RESEND CONFIG
 // =========================
-const EMAIL_USER = "cashnest.verifycom@gmail.com";
-const EMAIL_PASS = "iybo cecw pyvl amqw";
+const resend = new Resend("re_KuuEjVpJ_2ZdUzFQUup8U4tzmEzBeYZzG"); // 🔴 REPLACE THIS
+
+const SENDER_EMAIL = "onboarding@resend.dev"; // works for testing
 
 // =========================
 // STORAGE
@@ -31,26 +29,6 @@ function generateOTP() {
 }
 
 // =========================
-// TRANSPORTER (FIXED)
-// =========================
-function createTransporter() {
-  return nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    auth: {
-      user: EMAIL_USER,
-      pass: EMAIL_PASS,
-    },
-    tls: {
-      rejectUnauthorized: false
-    },
-    connectionTimeout: 10000, // 🔥 prevents hanging forever
-    socketTimeout: 10000
-  });
-}
-
-// =========================
 // SEND OTP
 // =========================
 app.post("/send-otp", async (req, res) => {
@@ -60,11 +38,11 @@ app.post("/send-otp", async (req, res) => {
     if (!email) {
       return res.status(400).json({
         success: false,
-        message: "Email is required"
+        message: "Email required"
       });
     }
 
-    // anti-spam (30 sec)
+    // anti-spam (30 sec cooldown)
     const last = cooldownStore.get(email);
     if (last && Date.now() - last < 30000) {
       return res.status(429).json({
@@ -79,17 +57,15 @@ app.post("/send-otp", async (req, res) => {
     otpStore.set(email, { otp, expiresAt });
     cooldownStore.set(email, Date.now());
 
-    const transporter = createTransporter();
-
-    await transporter.sendMail({
-      from: EMAIL_USER,
+    await resend.emails.send({
+      from: SENDER_EMAIL,
       to: email,
       subject: "Your OTP Code",
       html: `
-        <div style="font-family: Arial;">
+        <div style="font-family:Arial">
           <h2>Your OTP Code</h2>
           <h1>${otp}</h1>
-          <p>Valid for 5 minutes</p>
+          <p>This code expires in 5 minutes</p>
         </div>
       `
     });
@@ -100,12 +76,11 @@ app.post("/send-otp", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("SEND OTP ERROR:", err);
+    console.error("RESEND ERROR:", err);
 
     return res.status(500).json({
       success: false,
-      message: "Failed to send OTP",
-      error: err.message
+      message: "Failed to send OTP"
     });
   }
 });
@@ -122,19 +97,17 @@ app.post("/resend-otp", async (req, res) => {
     if (!record) {
       return res.status(400).json({
         success: false,
-        message: "No OTP found. Request new one."
+        message: "No OTP found"
       });
     }
 
-    const transporter = createTransporter();
-
-    await transporter.sendMail({
-      from: EMAIL_USER,
+    await resend.emails.send({
+      from: SENDER_EMAIL,
       to: email,
       subject: "Your OTP Code (Resent)",
       html: `
-        <div style="font-family: Arial;">
-          <h2>Your OTP (Resent)</h2>
+        <div style="font-family:Arial">
+          <h2>Your OTP Code</h2>
           <h1>${record.otp}</h1>
           <p>Still valid</p>
         </div>
