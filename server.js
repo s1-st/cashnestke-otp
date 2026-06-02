@@ -1,75 +1,119 @@
-const express = require("express");
-const cors = require("cors");
-const nodemailer = require("nodemailer");
+import express from "express";
+import nodemailer from "nodemailer";
+import crypto from "crypto";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
-
-app.use(cors());
 app.use(express.json());
 
-let otpStore = {};
+// In-memory store (safe per email, NOT global OTP)
+const otpStore = new Map();
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
+/**
+ * Create fresh transporter EACH request (prevents SMTP reuse bugs)
+ */
+function createTransporter() {
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+}
 
+/**
+ * Generate secure OTP
+ */
+function generateOTP() {
+  return crypto.randomInt(100000, 999999).toString();
+}
+
+/**
+ * SEND OTP
+ */
 app.post("/send-otp", async (req, res) => {
-
-  const { email } = req.body;
-
-  const otp = Math.floor(
-    100000 + Math.random() * 900000
-  ).toString();
-
-  otpStore[email] = otp;
-
   try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: "Email required" });
+    }
+
+    const otp = generateOTP();
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+    // store per email (NOT global)
+    otpStore.set(email, { otp, expiresAt });
+
+    const transporter = createTransporter();
 
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
-      subject: "Your Verification Code",
-      text: `Your OTP code is ${otp}`
+      subject: "Your OTP Code",
+      html: `
+        <h2>Your Verification Code</h2>
+        <p><b>${otp}</b></p>
+        <p>This code expires in 5 minutes.</p>
+      `,
     });
 
-    res.json({
-      success: true
+    return res.json({ success: true, message: "OTP sent successfully" });
+
+  } catch (error) {
+    console.error("OTP SEND ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send OTP. Try again later.",
     });
-
-  } catch (err) {
-
-    res.status(500).json({
-      success: false
-    });
-
   }
-
 });
 
+/**
+ * VERIFY OTP
+ */
 app.post("/verify-otp", (req, res) => {
-
   const { email, otp } = req.body;
 
-  if (otpStore[email] === otp) {
-
-    delete otpStore[email];
-
-    return res.json({
-      success: true
-    });
-
+  if (!email || !otp) {
+    return res.status(400).json({ success: false, message: "Missing fields" });
   }
 
-  res.json({
-    success: false
-  });
+  const record = otpStore.get(email);
 
+  if (!record) {
+    return res.status(400).json({ success: false, message: "No OTP found" });
+  }
+
+  if (Date.now() > record.expiresAt) {
+    otpStore.delete(email);
+    return res.status(400).json({ success: false, message: "OTP expired" });
+  }
+
+  if (record.otp !== otp) {
+    return res.status(400).json({ success: false, message: "Invalid OTP" });
+  }
+
+  otpStore.delete(email);
+
+  return res.json({ success: true, message: "OTP verified" });
 });
 
-app.listen(3000, () => {
-  console.log("Running");
-});
+/**
+ * CLEANUP OLD OTPs (prevents memory issues)
+ */
+setInterval(() => {
+  const now = Date.now();
+  for (const [email, data] of otpStore.entries()) {
+    if (data.expiresAt < now) {
+      otpStore.delete(email);
+    }
+  }
+}, 60 * 1000);
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("Server running on port", PORT));
