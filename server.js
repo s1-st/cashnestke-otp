@@ -30,14 +30,19 @@ function generateOTP() {
   return crypto.randomInt(100000, 999999).toString();
 }
 
-function createTransporter() {
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: EMAIL_USER,
-      pass: EMAIL_PASS,
-    },
-  });
+nodemailer.createTransport({
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
+  auth: {
+    user: EMAIL_USER,
+    pass: EMAIL_PASS,
+  },
+  tls: {
+    rejectUnauthorized: false
+  }
+});
+    
 }
 
 // =========================
