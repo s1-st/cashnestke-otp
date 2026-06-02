@@ -1,12 +1,17 @@
 const express = require("express");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
-require("dotenv").config();
 
 const app = express();
 app.use(express.json());
 
-// Safe in-memory store
+/**
+ * 👉 PUT YOUR EMAIL DETAILS HERE (IMPORTANT)
+ */
+const EMAIL_USER = "cashnest.verifycom@gmail.com";
+const EMAIL_PASS = "iybo cecw pyvl amqw";
+
+// OTP storage (temporary memory)
 const otpStore = new Map();
 
 /**
@@ -23,8 +28,8 @@ function createTransporter() {
   return nodemailer.createTransport({
     service: "gmail",
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
+      user: EMAIL_USER,
+      pass: EMAIL_PASS,
     },
   });
 }
@@ -41,20 +46,27 @@ app.post("/send-otp", async (req, res) => {
     }
 
     const otp = generateOTP();
-    const expiresAt = Date.now() + 5 * 60 * 1000;
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
 
     otpStore.set(email, { otp, expiresAt });
 
     const transporter = createTransporter();
 
     await transporter.sendMail({
-      from: process.env.EMAIL_USER,
+      from: EMAIL_USER,
       to: email,
       subject: "Your OTP Code",
-      html: `<h2>Your OTP is</h2><h1>${otp}</h1><p>Expires in 5 minutes</p>`,
+      html: `
+        <h2>Verification Code</h2>
+        <h1>${otp}</h1>
+        <p>This code expires in 5 minutes.</p>
+      `,
     });
 
-    return res.json({ success: true, message: "OTP sent successfully" });
+    return res.json({
+      success: true,
+      message: "OTP sent successfully",
+    });
 
   } catch (err) {
     console.error("SEND OTP ERROR:", err);
@@ -76,24 +88,49 @@ app.post("/verify-otp", (req, res) => {
   const record = otpStore.get(email);
 
   if (!record) {
-    return res.status(400).json({ success: false, message: "No OTP found" });
+    return res.status(400).json({
+      success: false,
+      message: "No OTP found",
+    });
   }
 
   if (Date.now() > record.expiresAt) {
     otpStore.delete(email);
-    return res.status(400).json({ success: false, message: "OTP expired" });
+    return res.status(400).json({
+      success: false,
+      message: "OTP expired",
+    });
   }
 
   if (record.otp !== otp) {
-    return res.status(400).json({ success: false, message: "Invalid OTP" });
+    return res.status(400).json({
+      success: false,
+      message: "Invalid OTP",
+    });
   }
 
   otpStore.delete(email);
 
-  return res.json({ success: true, message: "OTP verified" });
+  return res.json({
+    success: true,
+    message: "OTP verified successfully",
+  });
 });
 
+/**
+ * Clean expired OTPs every minute
+ */
+setInterval(() => {
+  const now = Date.now();
+  for (const [email, data] of otpStore.entries()) {
+    if (data.expiresAt < now) {
+      otpStore.delete(email);
+    }
+  }
+}, 60 * 1000);
+
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
+  console.log("OTP server running on port", PORT);
 });
