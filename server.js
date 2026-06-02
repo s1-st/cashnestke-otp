@@ -1,18 +1,23 @@
-import express from "express";
-import nodemailer from "nodemailer";
-import crypto from "crypto";
-import dotenv from "dotenv";
-
-dotenv.config();
+const express = require("express");
+const nodemailer = require("nodemailer");
+const crypto = require("crypto");
+require("dotenv").config();
 
 const app = express();
 app.use(express.json());
 
-// In-memory store (safe per email, NOT global OTP)
+// Safe in-memory store
 const otpStore = new Map();
 
 /**
- * Create fresh transporter EACH request (prevents SMTP reuse bugs)
+ * Generate OTP
+ */
+function generateOTP() {
+  return crypto.randomInt(100000, 999999).toString();
+}
+
+/**
+ * Create mail transporter
  */
 function createTransporter() {
   return nodemailer.createTransport({
@@ -22,13 +27,6 @@ function createTransporter() {
       pass: process.env.EMAIL_PASS,
     },
   });
-}
-
-/**
- * Generate secure OTP
- */
-function generateOTP() {
-  return crypto.randomInt(100000, 999999).toString();
 }
 
 /**
@@ -43,9 +41,8 @@ app.post("/send-otp", async (req, res) => {
     }
 
     const otp = generateOTP();
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+    const expiresAt = Date.now() + 5 * 60 * 1000;
 
-    // store per email (NOT global)
     otpStore.set(email, { otp, expiresAt });
 
     const transporter = createTransporter();
@@ -54,21 +51,18 @@ app.post("/send-otp", async (req, res) => {
       from: process.env.EMAIL_USER,
       to: email,
       subject: "Your OTP Code",
-      html: `
-        <h2>Your Verification Code</h2>
-        <p><b>${otp}</b></p>
-        <p>This code expires in 5 minutes.</p>
-      `,
+      html: `<h2>Your OTP is</h2><h1>${otp}</h1><p>Expires in 5 minutes</p>`,
     });
 
     return res.json({ success: true, message: "OTP sent successfully" });
 
-  } catch (error) {
-    console.error("OTP SEND ERROR:", error);
+  } catch (err) {
+    console.error("SEND OTP ERROR:", err);
 
     return res.status(500).json({
       success: false,
-      message: "Failed to send OTP. Try again later.",
+      message: "Failed to send OTP",
+      error: err.message,
     });
   }
 });
@@ -78,10 +72,6 @@ app.post("/send-otp", async (req, res) => {
  */
 app.post("/verify-otp", (req, res) => {
   const { email, otp } = req.body;
-
-  if (!email || !otp) {
-    return res.status(400).json({ success: false, message: "Missing fields" });
-  }
 
   const record = otpStore.get(email);
 
@@ -103,17 +93,7 @@ app.post("/verify-otp", (req, res) => {
   return res.json({ success: true, message: "OTP verified" });
 });
 
-/**
- * CLEANUP OLD OTPs (prevents memory issues)
- */
-setInterval(() => {
-  const now = Date.now();
-  for (const [email, data] of otpStore.entries()) {
-    if (data.expiresAt < now) {
-      otpStore.delete(email);
-    }
-  }
-}, 60 * 1000);
-
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server running on port", PORT));
+app.listen(PORT, () => {
+  console.log("Server running on port", PORT);
+});
