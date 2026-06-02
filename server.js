@@ -1,19 +1,23 @@
 const express = require("express");
-const crypto = require("crypto");
 const cors = require("cors");
+const crypto = require("crypto");
 const { Resend } = require("resend");
 
 const app = express();
 
+// =========================
+// MIDDLEWARE
+// =========================
 app.use(cors());
 app.use(express.json());
 
 // =========================
-// RESEND CONFIG
+// ENV (Render will provide this)
 // =========================
-const resend = new Resend("re_KuuEjVpJ_2ZdUzFQUup8U4tzmEzBeYZzG"); // 🔴 REPLACE THIS
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-const SENDER_EMAIL = "onboarding@resend.dev"; // works for testing
+const SENDER_EMAIL =
+  process.env.EMAIL_FROM || "onboarding@resend.dev";
 
 // =========================
 // STORAGE
@@ -38,11 +42,11 @@ app.post("/send-otp", async (req, res) => {
     if (!email) {
       return res.status(400).json({
         success: false,
-        message: "Email required"
+        message: "Email is required"
       });
     }
 
-    // anti-spam (30 sec cooldown)
+    // Anti-spam (30 seconds)
     const last = cooldownStore.get(email);
     if (last && Date.now() - last < 30000) {
       return res.status(429).json({
@@ -62,10 +66,10 @@ app.post("/send-otp", async (req, res) => {
       to: email,
       subject: "Your OTP Code",
       html: `
-        <div style="font-family:Arial">
+        <div style="font-family: Arial;">
           <h2>Your OTP Code</h2>
           <h1>${otp}</h1>
-          <p>This code expires in 5 minutes</p>
+          <p>This code expires in 5 minutes.</p>
         </div>
       `
     });
@@ -76,7 +80,7 @@ app.post("/send-otp", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("RESEND ERROR:", err);
+    console.error("SEND OTP ERROR:", err);
 
     return res.status(500).json({
       success: false,
@@ -106,10 +110,10 @@ app.post("/resend-otp", async (req, res) => {
       to: email,
       subject: "Your OTP Code (Resent)",
       html: `
-        <div style="font-family:Arial">
+        <div style="font-family: Arial;">
           <h2>Your OTP Code</h2>
           <h1>${record.otp}</h1>
-          <p>Still valid</p>
+          <p>Still valid for 5 minutes.</p>
         </div>
       `
     });
@@ -169,7 +173,7 @@ app.post("/verify-otp", (req, res) => {
 });
 
 // =========================
-// CLEANUP
+// CLEANUP EXPIRED OTPs
 // =========================
 setInterval(() => {
   const now = Date.now();
