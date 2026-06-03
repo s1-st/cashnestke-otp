@@ -12,14 +12,6 @@ app.use(cors());
 app.use(express.json());
 
 // =========================
-// ENV (Render will provide this)
-// =========================
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-const SENDER_EMAIL =
-  process.env.EMAIL_FROM || "onboarding@resend.dev";
-
-// =========================
 // STORAGE
 // =========================
 const otpStore = new Map();
