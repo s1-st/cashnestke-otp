@@ -38,6 +38,8 @@ function generateOTP() {
 app.post("/send-otp", async (req, res) => {
   try {
     const { email } = req.body;
+ 
+    console.log("EMAIL FROM FORM:", email);
 
     if (!email) {
       return res.status(400).json({
@@ -66,6 +68,9 @@ app.post("/send-otp", async (req, res) => {
       to: email,
       subject: "Your OTP Code",
       html: `
+      });
+
+console.log("RESEND RESULT:", result);
         <div style="font-family: Arial;">
           <h2>Your OTP Code</h2>
           <h1>${otp}</h1>
