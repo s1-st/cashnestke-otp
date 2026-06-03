@@ -35,11 +35,15 @@ function generateOTP() {
 // =========================
 // SEND OTP
 // =========================
+const sgMail = require("@sendgrid/mail");
+
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
 app.post("/send-otp", async (req, res) => {
   try {
     const { email } = req.body;
- 
-    console.log("EMAIL FROM FORM:", email);
+
+    console.log("EMAIL RECEIVED:", email);
 
     if (!email) {
       return res.status(400).json({
@@ -48,7 +52,6 @@ app.post("/send-otp", async (req, res) => {
       });
     }
 
-    // Anti-spam (30 seconds)
     const last = cooldownStore.get(email);
     if (last && Date.now() - last < 30000) {
       return res.status(429).json({
@@ -63,9 +66,9 @@ app.post("/send-otp", async (req, res) => {
     otpStore.set(email, { otp, expiresAt });
     cooldownStore.set(email, Date.now());
 
-    await resend.emails.send({
-      from: SENDER_EMAIL,
+    const msg = {
       to: email,
+      from: "your verified sender email (see step below)",
       subject: "Your OTP Code",
       html: `
         <div style="font-family: Arial;">
@@ -74,7 +77,9 @@ app.post("/send-otp", async (req, res) => {
           <p>This code expires in 5 minutes.</p>
         </div>
       `
-    });
+    };
+
+    await sgMail.send(msg);
 
     return res.json({
       success: true,
@@ -82,7 +87,7 @@ app.post("/send-otp", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("SEND OTP ERROR:", err);
+    console.error("SENDGRID ERROR:", err.response?.body || err);
 
     return res.status(500).json({
       success: false,
