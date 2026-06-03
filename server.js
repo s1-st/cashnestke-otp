@@ -62,7 +62,7 @@ app.post("/send-otp", async (req, res) => {
 
     const msg = {
       to: email,
-      from: "mwathageoffrey0@gmail.com", 
+      from: "cashnest.verifycom@gmail.com", 
       subject: "Your OTP Code",
       html: `
         <div style="font-family: Arial;">
