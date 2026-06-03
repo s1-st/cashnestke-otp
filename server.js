@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const crypto = require("crypto");
-const { Resend } = require("resend");
+const sgMail = require("@sendgrid/mail");
 
 const app = express();
 
@@ -10,6 +10,11 @@ const app = express();
 // =========================
 app.use(cors());
 app.use(express.json());
+
+// =========================
+// CONFIG
+// =========================
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 // =========================
 // STORAGE
@@ -27,10 +32,6 @@ function generateOTP() {
 // =========================
 // SEND OTP
 // =========================
-const sgMail = require("@sendgrid/mail");
-
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-
 app.post("/send-otp", async (req, res) => {
   try {
     const { email } = req.body;
@@ -44,6 +45,7 @@ app.post("/send-otp", async (req, res) => {
       });
     }
 
+    // cooldown
     const last = cooldownStore.get(email);
     if (last && Date.now() - last < 30000) {
       return res.status(429).json({
@@ -60,7 +62,7 @@ app.post("/send-otp", async (req, res) => {
 
     const msg = {
       to: email,
-      from: "your verified sender email (see step below)",
+      from: "mwathageoffrey0@gmail.com", 
       subject: "Your OTP Code",
       html: `
         <div style="font-family: Arial;">
@@ -79,55 +81,11 @@ app.post("/send-otp", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("SENDGRID ERROR:", err.response?.body || err);
+    console.error("SEND OTP ERROR:", err.response?.body || err);
 
     return res.status(500).json({
       success: false,
       message: "Failed to send OTP"
-    });
-  }
-});
-
-// =========================
-// RESEND OTP
-// =========================
-app.post("/resend-otp", async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    const record = otpStore.get(email);
-
-    if (!record) {
-      return res.status(400).json({
-        success: false,
-        message: "No OTP found"
-      });
-    }
-
-    await resend.emails.send({
-      from: SENDER_EMAIL,
-      to: email,
-      subject: "Your OTP Code (Resent)",
-      html: `
-        <div style="font-family: Arial;">
-          <h2>Your OTP Code</h2>
-          <h1>${record.otp}</h1>
-          <p>Still valid for 5 minutes.</p>
-        </div>
-      `
-    });
-
-    return res.json({
-      success: true,
-      message: "OTP resent successfully"
-    });
-
-  } catch (err) {
-    console.error("RESEND ERROR:", err);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to resend OTP"
     });
   }
 });
